@@ -1,0 +1,155 @@
+// CashFrog Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CLIENT
+  ADMIN
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVE
+  COMPLETED
+  DEFAULTED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  LATE
+  FAILED
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  phone         String?
+  role          UserRole       @default(CLIENT)
+  passwordHash  String
+
+  // KYC Data
+  dateOfBirth   DateTime?
+  address       String?
+  city          String?
+  zipCode       String?
+  income        Float?
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  loanRequests  LoanRequest[]
+  loans         Loan[]
+  creditScore   CreditScore?
+
+  @@index([email])
+}
+
+model CreditScore {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  score           Int       // 300-850 range
+  riskLevel       String    // LOW, MEDIUM, HIGH
+  maxLoanAmount   Float
+
+  // Scoring factors
+  incomeStability Boolean   @default(false)
+  debtRatio       Float?
+  paymentHistory  String?   // GOOD, FAIR, POOR
+
+  lastCalculated  DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model LoanRequest {
+  id              String      @id @default(cuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount          Float       // 100-600€
+  duration        Int         // in days (7-30)
+  purpose         String?
+
+  status          LoanStatus  @default(PENDING)
+
+  // AI Decision
+  aiScore         Float?
+  aiReasoning     String?
+
+  // Admin Review
+  adminNotes      String?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  loan            Loan?
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Loan {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  requestId       String        @unique
+  request         LoanRequest   @relation(fields: [requestId], references: [id])
+
+  amount          Float
+  duration        Int           // in days
+  interestRate    Float         // percentage
+  fees            Float         // fixed fees
+  totalAmount     Float         // amount + interest + fees
+
+  status          LoanStatus    @default(ACTIVE)
+
+  disbursedAt     DateTime      @default(now())
+  dueDate         DateTime
+  completedAt     DateTime?
+
+  payments        Payment[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  loanId          String
+  loan            Loan          @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  amount          Float
+  dueDate         DateTime
+  paidDate        DateTime?
+  status          PaymentStatus @default(PENDING)
+
+  lateFees        Float         @default(0)
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([loanId])
+  @@index([status])
+  @@index([dueDate])
+}
